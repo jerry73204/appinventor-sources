@@ -101,10 +101,19 @@
 
     <property name="auth.usegoogle" value="true" />
     <property name="auth.uselocal" value="true" />
+    <property name="auth.useldap" value="true" />
 
     <!-- Flags associated with localauth code -->
     <property name="localauth.mailserver" value="https://osiris.mit.edu/passmail/" />
     <property name="localauth.mailserver.password" value="changeme" />
+
+    <!-- Flags associated with LDAP authentication -->
+    <property name="ldapauth.server" value="localhost" />
+    <property name="ldapauth.port" value="389" />
+    <property name="ldapauth.usessl" value="false" />
+    <property name="ldapauth.timeout" value="3" />  <!-- in seconds, set 0 to wait forever -->
+    <property name="ldapauth.name" value="cn=Manager,dc=my-domain,dc=com" />
+    <property name="ldapauth.credential" value="changeme" />
 
     <!-- host[:port] to use for connecting to the build server -->
     <property name="build.server.host" value="localhost:9990" />

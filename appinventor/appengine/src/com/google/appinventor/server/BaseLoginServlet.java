@@ -70,13 +70,22 @@ public class BaseLoginServlet extends HttpServlet {
   protected static final Flag<String> password = Flag.createFlag("localauth.mailserver.password", "");
   protected static final Flag<Boolean> useGoogle = Flag.createFlag("auth.usegoogle", true);
   protected static final Flag<Boolean> useLocal = Flag.createFlag("auth.uselocal", false);
+  protected static final Flag<Boolean> useLDAP = Flag.createFlag("auth.useldap", false);
+  protected static final Flag<String> ldapServer = Flag.createFlag("ldapauth.server", null);
+  protected static final Flag<Integer> ldapPort = Flag.createFlag("ldapauth.port", -1);
+  protected static final Flag<Boolean> ldapUseSsl = Flag.createFlag("ldapauth.usessl", false);
+  protected static final Flag<Integer> ldapTimeOut = Flag.createFlag("ldapauth.timeout", 3);
+  protected static final Flag<String> ldapName = Flag.createFlag("ldapauth.name", null);
+  protected static final Flag<String> ldapCredential = Flag.createFlag("ldapauth.credential", null);
+
   protected static final UserService userService = UserServiceFactory.getUserService();
   protected static final boolean DEBUG = Flag.createFlag("appinventor.debugging", false).get();
 
   public void init(ServletConfig config) throws ServletException {
     super.init(config);
 
-    if (!useGoogle.get() && !useLocal.get()) {
+    // At least one authentication should be turned on
+    if (!useGoogle.get() && !useLocal.get() && !useLDAP.get()) {
       throw new ServletException("No authentication method is enabled. Please check either one of auth.usegoogle, auth.uselocal, auth.useldap is enabled.");
     }
   }
