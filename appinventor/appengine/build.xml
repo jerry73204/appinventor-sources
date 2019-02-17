@@ -153,16 +153,20 @@
     <copy todir="${build.war.dir}/WEB-INF/lib" file="${build.dir}/common/CommonVersion.jar"/>
     <copy todir="${build.war.dir}/WEB-INF/lib" file="${build.dir}/components/CommonConstants.jar"/>
     <!-- external libs -->
-    <copy todir="${build.war.dir}/WEB-INF/lib" file="${lib.dir}/commons-fileupload/commons-fileupload-1.2.2.jar" />
     <copy todir="${build.war.dir}/WEB-INF/lib" file="${lib.dir}/findbugs/jsr305.jar" />
     <copy todir="${build.war.dir}/WEB-INF/lib" file="${lib.dir}/guava/guava-20.0.jar" />
     <copy todir="${build.war.dir}/WEB-INF/lib" file="${lib.dir}/firebase/firebase-token-generator-2.0.0.jar" />
-    <copy todir="${build.war.dir}/WEB-INF/lib" file="${lib.dir}/commons-codec/commons-codec-1.7.jar" />
     <copy todir="${build.war.dir}/WEB-INF/lib" file="${lib.dir}/json/json.jar" />
     <copy todir="${build.war.dir}/WEB-INF/lib" file="${lib.dir}/keyczar/keyczar-0.66-080111-java-1.6.jar" />
     <copy todir="${build.war.dir}/WEB-INF/lib" file="${lib.dir}/objectify-3.1/objectify-3.1.jar" />
     <copy todir="${build.war.dir}/WEB-INF/lib" file="${lib.dir}/gson/gson-2.1.jar" />  <!-- for keyczar -->
     <copy todir="${build.war.dir}/WEB-INF/lib" file="${lib.dir}/log4j/log4j-1.2.16.jar" />  <!-- for keyczar -->
+    <!-- Apache Commons -->
+    <copy todir="${build.war.dir}/WEB-INF/lib" file="${lib.dir}/commons-fileupload/commons-fileupload-1.2.2.jar" />
+    <copy todir="${build.war.dir}/WEB-INF/lib" file="${lib.dir}/commons-codec/commons-codec-1.7.jar" />
+    <copy todir="${build.war.dir}/WEB-INF/lib" file="${lib.dir}/commons-collections/commons-collections-3.2.2.jar" />
+    <copy todir="${build.war.dir}/WEB-INF/lib" file="${lib.dir}/commons-lang/commons-lang-2.6.jar" />
+    <copy todir="${build.war.dir}/WEB-INF/lib" file="${lib.dir}/commons-pool/commons-pool2-2.0.jar" />
     <!-- GCS Libs -->
     <copy todir="${build.war.dir}/WEB-INF/lib" file="${lib.dir}/gcs/appengine-gcs-client-0.6.jar" />
     <copy todir="${build.war.dir}/WEB-INF/lib" file="${lib.dir}/gcs/jackson-core-2.1.3.jar" />
@@ -182,6 +186,28 @@
     <copy todir="${build.war.dir}/WEB-INF/lib" file="${lib.dir}/protobuf/protobuf-2.6.1.jar" />
     <!-- OWASP -->
     <copy todir="${build.war.dir}/WEB-INF/lib" file="${lib.dir}/owasp/owasp-java-html-sanitizer-20160628.1.jar" />
+    <!-- Apache Directory -->
+    <copy todir="${build.war.dir}/WEB-INF/lib" file="${lib.dir}/apache-directory/api-all-2.0.0.AM2.jar" />
+    <copy todir="${build.war.dir}/WEB-INF/lib" file="${lib.dir}/apache-directory/api-ldap-client-api-2.0.0.AM2.jar" />
+    <copy todir="${build.war.dir}/WEB-INF/lib" file="${lib.dir}/apache-directory/api-ldap-codec-core-2.0.0.AM2.jar" />
+    <copy todir="${build.war.dir}/WEB-INF/lib" file="${lib.dir}/apache-directory/api-ldap-extras-codec-2.0.0.AM2.jar" />
+    <copy todir="${build.war.dir}/WEB-INF/lib" file="${lib.dir}/apache-directory/api-ldap-extras-codec-api-2.0.0.AM2.jar" />
+    <copy todir="${build.war.dir}/WEB-INF/lib" file="${lib.dir}/apache-directory/api-ldap-model-2.0.0.AM2.jar" />
+    <copy todir="${build.war.dir}/WEB-INF/lib" file="${lib.dir}/apache-directory/api-ldap-schema-converter-2.0.0.AM2.jar" />
+    <copy todir="${build.war.dir}/WEB-INF/lib" file="${lib.dir}/apache-directory/api-ldap-schema-data-2.0.0.AM2.jar" />
+    <!-- Apache Mina, dependency of Apache Directory -->
+    <copy todir="${build.war.dir}/WEB-INF/lib" file="${lib.dir}/apache-mina/mina-core-2.0.18.jar" />
+    <!-- antlr, dependency of Apache Directory -->
+    <copy todir="${build.war.dir}/WEB-INF/lib" file="${lib.dir}/antlr/antlr-2.7.7.jar" />
+    <!-- slf4j, dependency of Apache Directory -->
+    <copy todir="${build.war.dir}/WEB-INF/lib" file="${lib.dir}/slf4j/slf4j-api-1.7.25.jar" />
+    <copy todir="${build.war.dir}/WEB-INF/lib" file="${lib.dir}/slf4j/slf4j-log4j12-1.7.25.jar" />
+    <!-- xml-apis, dependency of Apache Directory -->
+    <copy todir="${build.war.dir}/WEB-INF/lib" file="${lib.dir}/xml-apis/xml-apis-2.0.2.jar" />
+    <!-- Servicemix Bundles, dependency of Apache Directory -->
+    <copy todir="${build.war.dir}/WEB-INF/lib" file="${lib.dir}/servicemix-bundles/org.apache.servicemix.bundles.antlr-2.7.7_5.jar" />
+    <copy todir="${build.war.dir}/WEB-INF/lib" file="${lib.dir}/servicemix-bundles/org.apache.servicemix.bundles.dom4j-1.6.1_5.jar" />
+    <copy todir="${build.war.dir}/WEB-INF/lib" file="${lib.dir}/servicemix-bundles/org.apache.servicemix.bundles.xpp3-1.1.4c_7.jar" />
     <!-- Add any additional server libs that need to be copied -->
     <copy todir="${build.war.dir}/WEB-INF/lib" flatten="true">
       <fileset dir="${appengine.sdk}/lib/user" includes="**/*.jar"/>
