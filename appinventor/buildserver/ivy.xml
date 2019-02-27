@@ -1,0 +1,27 @@
+<ivy-module version="2.0">
+  <info organisation="appinventor" module="buildserver" />
+  <dependencies>
+    <dependency org="org.plovr" name="plovr" rev="eba786b34df9" />
+    <dependency org="org.webrtc" name="google-webrtc" rev="1.0.26405"/>
+    <dependency org="com.vividsolutions" name="jts" rev="1.13"/>
+    <dependency org="com.caverock" name="androidsvg" rev="1.3"/>
+    <dependency org="ch.acra" name="acra" rev="4.5.0"/>
+    <dependency org="org.twitter4j" name="twitter4j-core" rev="4.0.6"/>
+    <dependency org="org.twitter4j" name="twitter4j-media-support" rev="4.0.6"/>
+    <dependency org="org.apache.httpcomponents" name="httpcore" rev="4.4.11"/>
+    <dependency org="org.apache.httpcomponents" name="httpmime" rev="4.5.7"/>
+    <dependency org="com.google.apis" name="google-api-services-fusiontables" rev="v2-rev27-1.25.0"/>
+    <dependency org="com.google.firebase" name="firebase-core" rev="16.0.7"/>
+    <dependency org="com.google.api-client" name="google-api-client" rev="1.28.0"/>
+    <dependency org="com.google.http-client" name="google-http-client" rev="1.28.0"/>
+    <dependency org="com.google.api-client" name="google-api-client-android2" rev="1.11.0-beta"/>
+    <dependency org="com.google.http-client" name="google-http-client-android2" rev="1.11.0-beta"/>
+    <dependency org="com.google.http-client" name="google-http-client-android3" rev="1.11.0-beta"/>
+    <dependency org="com.google.code.gson" name="gson" rev="2.8.5"/>
+    <dependency org="org.json" name="json" rev="20180813"/>
+    <dependency org="com.google.oauth-client" name="google-oauth-client" rev="1.28.0"/>
+    <dependency org="redis.clients" name="jedis" rev="3.0.1"/>
+    <dependency org="org.apache.commons" name="commons-pool2" rev="2.6.1"/>
+    <dependency org="com.google.guava" name="guava" rev="27.0.1-jre"/>
+  </dependencies>
+</ivy-module>

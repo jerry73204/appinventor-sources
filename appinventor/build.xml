@@ -125,4 +125,14 @@
     <delete dir="build"/>
     <delete dir="reports"/>
   </target>
+
+  <!-- Automatically download Apache Ivy -->
+  <target name="resolve" description="--> retrieve dependencies with Ivy">
+    <ant inheritAll="false" useNativeBasedir="true" dir="appengine" target="resolve"/>
+    <ant inheritAll="false" useNativeBasedir="true" dir="blocklyeditor" target="resolve"/>
+    <ant inheritAll="false" useNativeBasedir="true" dir="aimerger" target="resolve"/>
+    <ant inheritAll="false" useNativeBasedir="true" dir="buildserver" target="resolve"/>
+    <ant inheritAll="false" useNativeBasedir="true" dir="common" target="resolve"/>
+    <ant inheritAll="false" useNativeBasedir="true" dir="components" target="resolve"/>
+  </target>
 </project>

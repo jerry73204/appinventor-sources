@@ -1,0 +1,5 @@
+<ivy-module version="2.0">
+  <info organisation="appinventor" module="components" />
+  <dependencies>
+  </dependencies>
+</ivy-module>

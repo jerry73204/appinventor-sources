@@ -1,0 +1,15 @@
+<ivysettings>
+  <properties file="build.properties" />
+  <settings defaultResolver="local-chain"/>
+  <resolvers>
+    <chain name="local-chain">
+      <!-- <filesystem name="libraries"> -->
+      <!--   <artifact pattern="${ivy.settings.dir}/repository/[artifact]-[revision].[ext]"/> -->
+      <!-- </filesystem> -->
+      <ibiblio name="central" root="http://central.maven.org/maven2/" m2compatible="true" usepoms="true" />
+      <ibiblio name="google" root="https://maven.google.com/" m2compatible="true" />
+      <ibiblio name="maven" root="http://jcenter.bintray.com/" m2compatible="true" usepoms="true" />  <!-- for google-webrtc -->
+      <ibiblio name="org.plovr.github.hikirsch" root="http://hikirsch.github.io/plovr-mvn-repo" m2compatible="true" />  <!-- for plovr -->
+    </chain>
+  </resolvers>
+</ivysettings>
