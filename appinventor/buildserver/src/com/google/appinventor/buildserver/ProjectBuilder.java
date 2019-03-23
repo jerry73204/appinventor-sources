@@ -117,7 +117,7 @@ public final class ProjectBuilder {
   }
 
   Result build(String userName, ZipFile inputZip, File outputDir, boolean isForCompanion,
-    int childProcessRam, String dexCachePath, BuildServer.ProgressReporter reporter) {
+    int childProcessRam, String dexCachePath, ProgressReporter reporter) {
     try {
       // Download project files into a temporary directory
       File projectRoot = createNewTempDir();

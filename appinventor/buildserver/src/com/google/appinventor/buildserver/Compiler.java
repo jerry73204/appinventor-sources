@@ -251,7 +251,7 @@ public final class Compiler {
 
   private static final Logger LOG = Logger.getLogger(Compiler.class.getName());
 
-  private BuildServer.ProgressReporter reporter; // Used to report progress of the build
+  private ProgressReporter reporter; // Used to report progress of the build
 
   /*
    * Generate the set of Android permissions needed by this project.
@@ -981,7 +981,7 @@ public final class Compiler {
                                 PrintStream out, PrintStream err, PrintStream userErrors,
                                 boolean isForCompanion, String keystoreFilePath,
                                 int childProcessRam, String dexCacheDir,
-                                BuildServer.ProgressReporter reporter) throws IOException, JSONException {
+                                ProgressReporter reporter) throws IOException, JSONException {
     long start = System.currentTimeMillis();
 
     // Create a new compiler instance for the compilation
@@ -1246,7 +1246,7 @@ public final class Compiler {
   @VisibleForTesting
   Compiler(Project project, Set<String> compTypes, Map<String, Set<String>> compBlocks, PrintStream out, PrintStream err,
            PrintStream userErrors, boolean isForCompanion,
-           int childProcessMaxRam, String dexCacheDir, BuildServer.ProgressReporter reporter) {
+           int childProcessMaxRam, String dexCacheDir, ProgressReporter reporter) {
     this.project = project;
     this.compBlocks = compBlocks;
 

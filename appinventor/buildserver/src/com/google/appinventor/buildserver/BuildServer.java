@@ -10,8 +10,13 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.io.ByteStreams;
 import com.google.common.io.Files;
 
-import com.sun.grizzly.http.SelectorThread;
-import com.sun.jersey.api.container.grizzly.GrizzlyServerFactory;
+import org.glassfish.grizzly.http.server.HttpServer;
+import org.glassfish.jersey.grizzly2.httpserver.GrizzlyHttpServerFactory;
+import org.glassfish.jersey.server.ResourceConfig;
+import org.glassfish.jersey.server.ServerProperties;
+import org.glassfish.jersey.media.multipart.MultiPartFeature;
+import org.glassfish.jersey.logging.LoggingFeature;
+
 
 import org.codehaus.jettison.json.JSONException;
 import org.codehaus.jettison.json.JSONObject;
@@ -22,14 +27,12 @@ import org.kohsuke.args4j.spi.StringArrayOptionHandler;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
+import java.io.FileNotFoundException;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
-import java.io.PrintWriter;
 import java.lang.management.ManagementFactory;
 import java.lang.management.MemoryMXBean;
 import java.lang.management.OperatingSystemMXBean;
@@ -38,13 +41,21 @@ import java.lang.Math;
 import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.URL;
+import java.net.URI;
+import java.net.URLEncoder;
 import java.text.DateFormat;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.Date;
+import java.util.UUID;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Logger;
+import java.util.logging.Level;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
@@ -52,10 +63,17 @@ import java.util.zip.ZipOutputStream;
 import javax.ws.rs.GET;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
+import javax.ws.rs.ApplicationPath;
 import javax.ws.rs.Produces;
 import javax.ws.rs.QueryParam;
+import javax.ws.rs.sse.Sse;
+import javax.ws.rs.sse.SseEventSink;
+import javax.ws.rs.core.UriBuilder;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
+import javax.ws.rs.core.Context;
+
+import javax.servlet.http.HttpServletRequest;
 
 /**
  * Top level class for exposing the building of App Inventor APK files as a RESTful web service.
@@ -69,88 +87,85 @@ import javax.ws.rs.core.Response;
 public class BuildServer {
   private ProjectBuilder projectBuilder = new ProjectBuilder();
 
-  static class ProgressReporter {
-    // We create a ProgressReporter instance which is handed off to the
-    // project builder and compiler. It is called to report the progress
-    // of the build. The reporting is done by calling the callback URL
-    // and putting the status inside a "build.status" file. This isn't
-    // particularly efficient, but this is the version 0.9 implementation
-    String callbackUrlStr;
-    ProgressReporter(String callbackUrlStr) {
-      this.callbackUrlStr = callbackUrlStr;
-    }
-
-    public void report(int progress) {
-      try {
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-        ZipOutputStream zipoutput = new ZipOutputStream(output);
-        zipoutput.putNextEntry(new ZipEntry("build.status"));
-        PrintWriter pout = new PrintWriter(zipoutput);
-        pout.println(progress);
-        pout.flush();
-        zipoutput.flush();
-        zipoutput.close();
-        ByteArrayInputStream zipinput = new ByteArrayInputStream(output.toByteArray());
-        URL callbackUrl = new URL(callbackUrlStr);
-        HttpURLConnection connection = (HttpURLConnection) callbackUrl.openConnection();
-        connection.setDoOutput(true);
-        connection.setRequestMethod("POST");
-        // Make sure we aren't misinterpreted as
-        // form-url-encoded
-        connection.addRequestProperty("Content-Type","application/zip; charset=utf-8");
-        connection.setConnectTimeout(5000);
-        connection.setReadTimeout(5000);
-        BufferedOutputStream bufferedOutputStream = new BufferedOutputStream(connection.getOutputStream());
-        try {
-          BufferedInputStream bufferedInputStream = new BufferedInputStream(zipinput);
-          try {
-            ByteStreams.copy(bufferedInputStream,bufferedOutputStream);
-            bufferedOutputStream.flush();
-          } finally {
-            bufferedInputStream.close();
-          }
-        } finally {
-          bufferedOutputStream.close();
-        }
-        if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) {
-          LOG.severe("Bad Response Code! (sending status): "+ connection.getResponseCode());
-        }
-      } catch (IOException e) {
-        LOG.severe("IOException during progress report!");
-      }
-    }
-  }
-
-
   static class CommandLineOptions {
     @Option(name = "--shutdownToken",
-      usage = "Token needed to shutdown the server remotely.")
-    String shutdownToken = null;
+            usage = "Token needed to shutdown the server remotely.")
+            String shutdownToken = null;
 
     @Option(name = "--childProcessRamMb",
-      usage = "Maximum ram that can be used by a child processes, in MB.")
-    int childProcessRamMb = 2048;
+            usage = "Maximum ram that can be used by a child processes, in MB.")
+            int childProcessRamMb = 2048;
 
     @Option(name = "--maxSimultaneousBuilds",
-      usage = "Maximum number of builds that can run in parallel. O means unlimited.")
-    int maxSimultaneousBuilds = 0;  // The default is unlimited.
+            usage = "Maximum number of builds that can run in parallel. O means unlimited.")
+            int maxSimultaneousBuilds = 0;  // The default is unlimited.
 
     @Option(name = "--port",
-      usage = "The port number to bind to on the local machine.")
-    int port = 9990;
+            usage = "The port number to bind to on the local machine.")
+            int port = 9990;
 
     @Option(name = "--requiredHosts",
-      usage = "If specified, a list of hosts which are permitted to use this BuildServer, other the server is open to all.",
-      handler = StringArrayOptionHandler.class)
-    String[] requiredHosts = null;
+            usage = "If specified, a list of hosts which are permitted to use this BuildServer, other the server is open to all.",
+            handler = StringArrayOptionHandler.class)
+            String[] requiredHosts = null;
 
     @Option(name = "--debug",
-      usage = "Turn on debugging, which enables the non-async calls of the buildserver.")
-    boolean debug = false;
+            usage = "Turn on debugging, which enables the non-async calls of the buildserver.")
+            boolean debug = false;
     @Option(name = "--dexCacheDir",
             usage = "the directory to cache the pre-dexed libraries")
-    String dexCacheDir = null;
+            String dexCacheDir = null;
 
+  }
+
+  static class BuildOutput implements AutoCloseable {
+    private boolean closed = false;
+
+    // The built APK file for this build request, if any.
+    public final File apk;
+
+    // The temp directory that we're building in.
+    public final File dir;
+
+    // The android.keystore file generated by this build request, if necessary.
+    public final File keystore;
+
+    // The zip file where we put all the build results for this request.
+    public final File zip;
+
+    Result result;
+
+    BuildOutput(File apk, File zip, File dir, File keystore, Result result) {
+      this.apk = apk;
+      this.zip = zip;
+      this.dir = dir;
+      this.keystore = keystore;
+      this.result = result;
+    }
+
+    public boolean isClosed() {
+      return closed;
+    }
+
+    @Override
+    public void close() {
+      if (closed) {
+        return;
+      }
+
+      if (keystore != null) {
+        keystore.delete();
+      }
+      if (apk != null) {
+        apk.delete();
+      }
+      if (zip != null) {
+        zip.delete();
+      }
+      if (dir != null) {
+        dir.delete();
+      }
+    }
   }
 
   private static final CommandLineOptions commandLineOptions = new CommandLineOptions();
@@ -164,6 +179,9 @@ public class BuildServer {
 
   private static final MediaType ZIP_MEDIA_TYPE =
     new MediaType("application", "zip", ImmutableMap.of("charset", "utf-8"));
+
+  // Output zip file is cached for 60 seconds
+  private static final long OUTPUT_ZIP_TIMEOUT = 60;
 
   private static final AtomicInteger buildCount = new AtomicInteger(0);
 
@@ -179,6 +197,12 @@ public class BuildServer {
   //The number of failed build requests for this server run
   private static final AtomicInteger failedBuildRequests = new AtomicInteger(0);
 
+  // The container keeps a list of cached output files
+  private static final ConcurrentMap<UUID, BuildOutput> outputCache = new ConcurrentHashMap<UUID, BuildOutput>();
+
+  // global timer used to schedule async tasks
+  private static final Timer serverTimer = new Timer();
+
   //The number of failed build requests for this server run
   private static int maximumActiveBuildTasks = 0;
 
@@ -187,21 +211,6 @@ public class BuildServer {
   // processed in main(). If it is created here, the number of simultaneous builds will always be
   // the default value, even if the --maxSimultaneousBuilds option is on the command line.
   private static NonQueuingExecutor buildExecutor;
-
-  // The input zip file. It will be deleted in cleanUp.
-  private File inputZip;
-
-  // The built APK file for this build request, if any.
-  private File outputApk;
-
-  // The temp directory that we're building in.
-  private File outputDir;
-
-  // The android.keystore file generated by this build request, if necessary.
-  private File outputKeystore;
-
-  // The zip file where we put all the build results for this request.
-  private File outputZip;
 
   // non-zero means we are shutting down, if currentTimeMillis is > then this, then we are
   // completely shutdown, otherwise we are just providing NOT OK for health checks but
@@ -326,16 +335,32 @@ public class BuildServer {
   @Produces(MediaType.TEXT_PLAIN)
   public Response shutdown(@QueryParam("token") String token, @QueryParam("delay") String delay) throws IOException {
     if (commandLineOptions.shutdownToken == null || token == null) {
-      return Response.status(Response.Status.FORBIDDEN).type(MediaType.TEXT_PLAIN_TYPE).entity("No Shutdown Token").build();
+      return Response.status(Response.Status.BAD_REQUEST)
+        .type(MediaType.TEXT_PLAIN_TYPE)
+        .entity("No shutdown token")
+        .build();
     } else if (!token.equals(commandLineOptions.shutdownToken)) {
-      return Response.status(Response.Status.FORBIDDEN).type(MediaType.TEXT_PLAIN_TYPE).entity("Invalid Shutdown Token").build();
+      return Response.status(Response.Status.BAD_REQUEST)
+        .type(MediaType.TEXT_PLAIN_TYPE)
+        .entity("Invalid shutdown token")
+        .build();
     } else {
       long shutdownTime = System.currentTimeMillis();
       if (delay != null) {
         try {
           shutdownTime += Integer.parseInt(delay) *1000;
         } catch (NumberFormatException e) {
-          // XXX Ignore
+          return Response.status(Response.Status.BAD_REQUEST)
+            .type(MediaType.TEXT_PLAIN_TYPE)
+            .entity("Invalid shutdown time")
+            .build();
+        }
+
+        if (shutdownTime < 0) {
+          return Response.status(Response.Status.BAD_REQUEST)
+            .type(MediaType.TEXT_PLAIN_TYPE)
+            .entity("Invalid shutdown time")
+            .build();
         }
       }
       shuttingTime = shutdownTime;
@@ -359,27 +384,22 @@ public class BuildServer {
   @POST
   @Path("build-from-zip")
   @Produces("application/vnd.android.package-archive;charset=utf-8")
-  public Response buildFromZipFile(@QueryParam("uname") String userName, File zipFile)
+  public Response buildFromZipFile(@QueryParam("uname") String userName, File inputZip)
     throws IOException {
     // Set the inputZip field so we can delete the input zip file later in cleanUp.
-    inputZip = zipFile;
     inputZip.deleteOnExit();  // In case build server is killed before cleanUp executes.
 
     if(!commandLineOptions.debug)
       return Response.status(Response.Status.FORBIDDEN).type(MediaType.TEXT_PLAIN_TYPE)
         .entity("Entry point unavailable unless debugging.").build();
 
-    try {
-      build(userName, zipFile, null);
-      String attachedFilename = outputApk.getName();
-      FileInputStream outputApkDeleteOnClose = new DeleteFileOnCloseFileInputStream(outputApk);
-      // Set the outputApk field to null so that it won't be deleted in cleanUp().
-      outputApk = null;
-      return Response.ok(outputApkDeleteOnClose)
-        .header("Content-Disposition", "attachment; filename=\"" + attachedFilename + "\"")
+    try (BuildOutput output = build(userName, inputZip, null);) {
+      String attachedFilename = output.apk.getName();
+      FileInputStream finStream = new FileInputStream(output.apk);
+      // Set the apk field to null so that it won't be deleted in cleanUp().
+      return Response.ok(finStream)
+        .header("Content-Disposition", "attachment; filename=\"" + URLEncoder.encode(attachedFilename) + "\"")
         .build();
-    } finally {
-      cleanUp();
     }
   }
 
@@ -402,27 +422,23 @@ public class BuildServer {
   @POST
   @Path("build-all-from-zip")
   @Produces("application/zip;charset=utf-8")
-  public Response buildAllFromZipFile(@QueryParam("uname") String userName, File inputZipFile)
+  public Response buildAllFromZipFile(@QueryParam("uname") String userName, File inputZip)
     throws IOException, JSONException {
     // Set the inputZip field so we can delete the input zip file later in cleanUp.
-    inputZip = inputZipFile;
     inputZip.deleteOnExit();  // In case build server is killed before cleanUp executes.
 
     if(!commandLineOptions.debug)
       return Response.status(Response.Status.FORBIDDEN).type(MediaType.TEXT_PLAIN_TYPE)
         .entity("Entry point unavailable unless debugging.").build();
 
-    try {
-      buildAndCreateZip(userName, inputZipFile, null);
-      String attachedFilename = outputZip.getName();
-      FileInputStream outputZipDeleteOnClose = new DeleteFileOnCloseFileInputStream(outputZip);
-      // Set the outputZip field to null so that it won't be deleted in cleanUp().
-      outputZip = null;
-      return Response.ok(outputZipDeleteOnClose)
-        .header("Content-Disposition", "attachment; filename=\"" + attachedFilename + "\"")
+    try (BuildOutput output = buildAndCreateZip(userName, inputZip, null)) {
+
+      String attachedFilename = output.zip.getName();
+      FileInputStream finStream = new FileInputStream(output.zip);
+      // Set the zip field to null so that it won't be deleted in cleanUp().
+      return Response.ok(finStream)
+        .header("Content-Disposition", "attachment; filename=\"" + URLEncoder.encode(attachedFilename) + "\"")
         .build();
-    } finally {
-      cleanUp();
     }
   }
 
@@ -460,16 +476,16 @@ public class BuildServer {
     @QueryParam("uname") final String userName,
     @QueryParam("callback") final String callbackUrlStr,
     @QueryParam("gitBuildVersion") final String gitBuildVersion,
-    final File inputZipFile) throws IOException {
+    final File inputZip) throws IOException {
     // Set the inputZip field so we can delete the input zip file later in
     // cleanUp.
-    inputZip = inputZipFile;
     inputZip.deleteOnExit(); // In case build server is killed before cleanUp executes.
     String requesting_host = (new URL(callbackUrlStr)).getHost();
 
     //for the request for update part, the file should be empty
     if (inputZip.length() == 0L) {
-      cleanUp();
+      // TODO
+      // cleanUp();
     } else {
       if (getShutdownState() == ShutdownState.DOWN) {
         LOG.info("request received while shutdown completely");
@@ -506,7 +522,7 @@ public class BuildServer {
           // This request was rejected because the gitBuildVersion parameter did not equal the
           // expected value.
           rejectedAsyncBuildRequests.incrementAndGet();
-          cleanUp();
+          // cleanUp();
           // Here, we use CONFLICT (response code 409), which means (according to rfc2616, section
           // 10) "The request could not be completed due to a conflict with the current state of the
           // resource."
@@ -518,10 +534,10 @@ public class BuildServer {
           @Override
           public void run() {
             int count = buildCount.incrementAndGet();
-            try {
-              LOG.info("START NEW BUILD " + count);
-              checkMemory();
-              buildAndCreateZip(userName, inputZipFile, new ProgressReporter(callbackUrlStr));
+            LOG.info("START NEW BUILD " + count);
+            checkMemory();
+
+            try (BuildOutput output = buildAndCreateZip(userName, inputZip, new CallbackProgressReporter(callbackUrlStr));) {
               // Send zip back to the callbackUrl
               LOG.info("CallbackURL: " + callbackUrlStr);
               URL callbackUrl = new URL(callbackUrlStr);
@@ -533,19 +549,13 @@ public class BuildServer {
               connection.addRequestProperty("Content-Type","application/zip; charset=utf-8");
               connection.setConnectTimeout(60000);
               connection.setReadTimeout(60000);
-              BufferedOutputStream bufferedOutputStream = new BufferedOutputStream(connection.getOutputStream());
-              try {
-                BufferedInputStream bufferedInputStream = new BufferedInputStream(
-                  new FileInputStream(outputZip));
-                try {
+
+              try (BufferedOutputStream bufferedOutputStream = new BufferedOutputStream(connection.getOutputStream())) {
+                try (BufferedInputStream bufferedInputStream = new BufferedInputStream(new FileInputStream(output.zip))) {
                   ByteStreams.copy(bufferedInputStream,bufferedOutputStream);
                   checkMemory();
                   bufferedOutputStream.flush();
-                } finally {
-                  bufferedInputStream.close();
                 }
-              } finally {
-                bufferedOutputStream.close();
               }
               if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) {LOG.severe("Bad Response Code!: "+ connection.getResponseCode());
                 // TODO(user) Maybe do some retries
@@ -554,7 +564,7 @@ public class BuildServer {
               // TODO(user): Maybe send a failure callback
               LOG.severe("Exception: " + e.getMessage()+ " and the length is of inputZip is "+ inputZip.length());
             } finally {
-              cleanUp();
+              // cleanUp();
               checkMemory();
               LOG.info("BUILD " + count + " FINISHED");
             }
@@ -566,7 +576,7 @@ public class BuildServer {
         // This request was rejected because all threads in the build
         // executor are busy.
         rejectedAsyncBuildRequests.incrementAndGet();
-        cleanUp();
+        // cleanUp();
         // Here, we use SERVICE_UNAVAILABLE (response code 503), which
         // means (according to rfc2616, section 10) "The server is
         // currently unable to handle the request due to a temporary
@@ -583,33 +593,255 @@ public class BuildServer {
       .entity("" + 50).build();
   }
 
-  private void buildAndCreateZip(String userName, File inputZipFile, ProgressReporter reporter)
-    throws IOException, JSONException {
-    Result buildResult = build(userName, inputZipFile, reporter);
-    boolean buildSucceeded = buildResult.succeeded();
-    outputZip = File.createTempFile(inputZipFile.getName(), ".zip");
-    outputZip.deleteOnExit();  // In case build server is killed before cleanUp executes.
-    ZipOutputStream zipOutputStream =
-      new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(outputZip)));
-    if (buildSucceeded) {
-      if (outputKeystore != null) {
-        zipOutputStream.putNextEntry(new ZipEntry(outputKeystore.getName()));
-        Files.copy(outputKeystore, zipOutputStream);
-      }
-      zipOutputStream.putNextEntry(new ZipEntry(outputApk.getName()));
-      Files.copy(outputApk, zipOutputStream);
-      successfulBuildRequests.getAndIncrement();
-    } else {
-      LOG.severe("Build " + buildCount.get() + " Failed: " + buildResult.getResult() + " " + buildResult.getError());
-      failedBuildRequests.getAndIncrement();
+  @POST
+  @Path("build-all-from-zip-sse")
+  @Produces(MediaType.SERVER_SENT_EVENTS)
+  public void buildAllFromZipFileSse(
+    @QueryParam("uname") final String userName,
+    @QueryParam("gitBuildVersion") final String gitBuildVersion,
+    @Context HttpServletRequest req,
+    final @Context SseEventSink eventSink,
+    final @Context Sse sse,
+    final File inputZip) throws IOException {
+
+    // Set the inputZip field so we can delete the input zip file later in
+    // cleanUp.
+    inputZip.deleteOnExit(); // In case build server is killed before cleanUp executes.
+
+    // Fail the request if the server is shutting down
+    if (getShutdownState() == ShutdownState.DOWN) {
+      LOG.info("request received while shutdown completely");
+
+      eventSink.send(sse.newEvent("result", "error"));
+      eventSink.send(sse.newEvent("message", "Build server is shutting down."));
+      eventSink.send(sse.newEvent("bye", ""));
+      eventSink.close();
+      return;
     }
-    zipOutputStream.putNextEntry(new ZipEntry("build.out"));
-    String buildOutputJson = genBuildOutput(buildResult);
-    PrintStream zipPrintStream = new PrintStream(zipOutputStream);
-    zipPrintStream.print(buildOutputJson);
-    zipPrintStream.flush();
-    zipOutputStream.flush();
-    zipOutputStream.close();
+
+    // Check whitelist if required by command options
+    if (commandLineOptions.requiredHosts != null) {
+      boolean oktoproceed = false;
+      String remoteHost = req.getRemoteHost();
+      String remoteAddr = req.getRemoteAddr();
+
+      for (String host : commandLineOptions.requiredHosts) {
+        if (host.equals(remoteHost) || host.equals(remoteAddr)) {
+          oktoproceed = true;
+          break;}
+      }
+
+      if (oktoproceed) {
+        LOG.info("requesting host (" + remoteHost + ") is in the allowed host list request will be honored.");
+      } else {
+        // Return an error
+        LOG.info("requesting host (" + remoteHost + ") is NOT in the allowed host list request will be rejected.");
+
+        eventSink.send(sse.newEvent("result", "error"));
+        eventSink.send(sse.newEvent("message", "You are not permitted to use this build server."));
+        eventSink.send(sse.newEvent("bye", ""));
+        eventSink.close();
+        return;
+      }
+    } else {
+      LOG.info("requiredHosts is not set, no restriction on incoming clients.");
+    }
+
+    asyncBuildRequests.incrementAndGet();
+
+    // Check if gitBuildVersion is valid
+    if (gitBuildVersion != null && !gitBuildVersion.isEmpty()) {
+      if (!gitBuildVersion.equals(GitBuildId.getVersion())) {
+        // This build server is not compatible with the App Inventor instance. Log this as severe
+        // so the owner of the build server will know about it.
+        String errorMessage = "Build server version " + GitBuildId.getVersion() +
+          " is not compatible with App Inventor version " + gitBuildVersion + ".";
+        LOG.severe(errorMessage);
+        // This request was rejected because the gitBuildVersion parameter did not equal the
+        // expected value.
+        rejectedAsyncBuildRequests.incrementAndGet();
+        // cleanUp();
+        // Here, we use CONFLICT (response code 409), which means (according to rfc2616, section
+        // 10) "The request could not be completed due to a conflict with the current state of the
+        // resource."
+
+        eventSink.send(sse.newEvent("result", "error"));
+        eventSink.send(sse.newEvent("message", errorMessage));
+        eventSink.send(sse.newEvent("bye", ""));
+        eventSink.close();
+      }
+    }
+
+    // Define build task
+    Runnable buildTask = new Runnable() {
+      @Override
+      public void run() {
+        int count = buildCount.incrementAndGet();
+
+        try {
+          final BuildOutput output = buildAndCreateZip(userName, inputZip, new SseProgressReporter(eventSink, sse));
+          LOG.info("START NEW BUILD " + count);
+          checkMemory();
+
+          // Register cache
+          while (true) {
+            final UUID uuid = UUID.randomUUID();
+            BuildOutput prevOut = outputCache.putIfAbsent(uuid, output);
+            if (prevOut != null) { // In case of UUID collision
+              continue;
+            }
+
+            // Schedule async clean up task
+            TimerTask cleanUpTask = new TimerTask() {
+              @Override
+              public void run() {
+                synchronized (output) {
+                  outputCache.remove(uuid);
+                  output.close();
+                }
+              }
+            };
+            serverTimer.schedule(cleanUpTask, OUTPUT_ZIP_TIMEOUT);
+            break;
+          }
+
+          // Tell ticket to client
+          eventSink.send(sse.newEvent("result", "success"));
+          eventSink.send(sse.newEvent("uuid", uuid.toString()));
+          eventSink.send(sse.newEvent("bye", ""));
+          eventSink.close();
+
+        } catch (IOException | JSONException ex) {
+          LOG.log(Level.SEVERE, "Build failed", ex);
+          eventSink.send(sse.newEvent("result", "error"));
+          eventSink.send(sse.newEvent("message", "Internal error"));
+          eventSink.send(sse.newEvent("bye", ""));
+          eventSink.close();
+        } finally {
+          // cleanUp();
+          checkMemory();
+          LOG.info("BUILD " + count + " FINISHED");
+        }
+      }
+    };
+
+    // Run build task
+    try {
+      buildExecutor.execute(buildTask);
+    } catch (RejectedExecutionException e) {
+      // This request was rejected because all threads in the build
+      // executor are busy.
+      rejectedAsyncBuildRequests.incrementAndGet();
+      // cleanUp();
+      // Here, we use SERVICE_UNAVAILABLE (response code 503), which
+      // means (according to rfc2616, section 10) "The server is
+      // currently unable to handle the request due to a temporary
+      // overloading or maintenance of the server. The implication
+      // is that this is a temporary condition which will be
+      // alleviated after some delay."
+      eventSink.send(sse.newEvent("result", "error"));
+      eventSink.send(sse.newEvent("message", "The build server is currently at maximum capacity."));
+      eventSink.send(sse.newEvent("bye", ""));
+      eventSink.close();
+      return;
+    }
+  }
+
+  @POST
+  @Path("download-output-zip")
+  @Produces("application/zip;charset=utf-8")
+  public Response downloadOutputZip(
+    @QueryParam("uuid") UUID uuid) {
+    // Suppose only single user knows the UUID.
+    // We do not lock the hash map
+
+    if (!outputCache.containsKey(uuid)) {
+      return Response.status(Response.Status.BAD_REQUEST)
+        .type(MediaType.TEXT_PLAIN_TYPE)
+        .entity("UUID parameter is not valid.")
+        .build();
+    }
+
+    try (BuildOutput output = outputCache.get(uuid)) {
+      if (output == null) {
+        return Response.status(Response.Status.BAD_REQUEST)
+          .type(MediaType.TEXT_PLAIN_TYPE)
+          .entity("UUID parameter is not valid.")
+          .build();
+      }
+
+      synchronized (output) {
+        outputCache.remove(uuid);
+
+        if (output.isClosed()) {   // The output is outdated
+          return Response.status(Response.Status.BAD_REQUEST)
+            .type(MediaType.TEXT_PLAIN_TYPE)
+            .entity("UUID parameter is not valid.")
+            .build();
+        }
+
+        File outputZip = output.zip;
+        if (outputZip == null) {   // The output is outdated
+          return Response.status(Response.Status.BAD_REQUEST)
+            .type(MediaType.TEXT_PLAIN_TYPE)
+            .entity("UUID parameter is not valid.")
+            .build();
+        }
+
+        // Write response
+        String filename = outputZip.getName();
+        FileInputStream finStream = new FileInputStream(output.zip);
+        return Response.ok(finStream)
+          .header("Content-Disposition", "attachment; filename=\"" + URLEncoder.encode(filename) + "\"")
+          .build();
+      }
+    } catch (FileNotFoundException e) {
+      return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+        .type(MediaType.TEXT_PLAIN_TYPE)
+        .entity("Internal error.")
+        .build();
+    }
+  }
+
+
+  private BuildOutput buildAndCreateZip(String userName, File inputZip, ProgressReporter reporter)
+    throws IOException, JSONException {
+    BuildOutput buildOut = build(userName, inputZip, reporter);
+    Result buildResult = buildOut.result;
+    boolean buildSucceeded = buildResult.succeeded();
+    File zip = File.createTempFile(inputZip.getName(), ".zip");
+    zip.deleteOnExit();  // In case build server is killed before cleanUp executes.
+    try (ZipOutputStream zipOutputStream =
+         new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(zip)))) {
+      if (buildSucceeded) {
+        if (buildOut.keystore != null) {
+          zipOutputStream.putNextEntry(new ZipEntry(buildOut.keystore.getName()));
+          Files.copy(buildOut.keystore, zipOutputStream);
+        }
+        zipOutputStream.putNextEntry(new ZipEntry(buildOut.apk.getName()));
+        Files.copy(buildOut.apk, zipOutputStream);
+        successfulBuildRequests.getAndIncrement();
+      } else {
+        LOG.severe("Build " + buildCount.get() + " Failed: " + buildResult.getResult() + " " + buildResult.getError());
+        failedBuildRequests.getAndIncrement();
+      }
+      zipOutputStream.putNextEntry(new ZipEntry("build.out"));
+      String buildOutputJson = genBuildOutput(buildResult);
+      try (PrintStream zipPrintStream = new PrintStream(zipOutputStream)) {
+        zipPrintStream.print(buildOutputJson);
+        zipPrintStream.flush();
+      }
+      zipOutputStream.flush();
+    }
+
+    BuildOutput wrappedOutput = new BuildOutput(
+      buildOut.apk,
+      zip,
+      buildOut.dir,
+      buildOut.keystore,
+      buildOut.result
+      );
+    return wrappedOutput;
   }
 
   private String genBuildOutput(Result buildResult) throws JSONException {
@@ -623,9 +855,9 @@ public class BuildServer {
     return buildOutputJsonObj.toString();
   }
 
-  private Result build(String userName, File zipFile, ProgressReporter reporter) throws IOException {
-    outputDir = Files.createTempDir();
-    // We call outputDir.deleteOnExit() here, in case build server is killed before cleanUp
+  private BuildOutput build(String userName, File zipFile, ProgressReporter reporter) throws IOException {
+    File outputDir = Files.createTempDir();
+    // We call dir.deleteOnExit() here, in case build server is killed before cleanUp
     // executes. However, it is likely that the directory won't be empty and therefore, won't
     // actually be deleted. That's only if the build server is killed (via ctrl+c) while a build
     // is happening, so we should be careful about that.
@@ -636,34 +868,17 @@ public class BuildServer {
     LOG.info("Build output: " + buildOutput);
     String buildError = buildResult.getError();
     LOG.info("Build error output: " + buildError);
-    outputApk = projectBuilder.getOutputApk();
+    File outputApk = projectBuilder.getOutputApk();
     if (outputApk != null) {
       outputApk.deleteOnExit();  // In case build server is killed before cleanUp executes.
     }
-    outputKeystore = projectBuilder.getOutputKeystore();
+    File outputKeystore = projectBuilder.getOutputKeystore();
     if (outputKeystore != null) {
       outputKeystore.deleteOnExit();  // In case build server is killed before cleanUp executes.
     }
     checkMemory();
-    return buildResult;
-  }
-
-  private void cleanUp() {
-    if (inputZip != null) {
-      inputZip.delete();
-    }
-    if (outputKeystore != null) {
-      outputKeystore.delete();
-    }
-    if (outputApk != null) {
-      outputApk.delete();
-    }
-    if (outputZip != null) {
-      outputZip.delete();
-    }
-    if (outputDir != null) {
-      outputDir.delete();
-    }
+    BuildOutput output = new BuildOutput(outputApk, null, outputDir, outputKeystore, buildResult);
+    return output;
   }
 
   private static void checkMemory() {
@@ -695,39 +910,47 @@ public class BuildServer {
     // We combine this code with a configuration in the swarm service to *not*
     // hard kill a container for a period of time (say 15 minutes) to give
     // running jobs a chance to finish.
-    Runtime.getRuntime().addShutdownHook(new Thread() {
-        @Override
-        public void run() {
-          shuttingTime = System.currentTimeMillis();
-          if (buildExecutor == null) {
-            /* We haven't really started up yet... */
-            return;
-          }
-          while (true) {
-            int tasks = buildExecutor.getActiveTaskCount();
-            if (tasks <= 0) {
-              try {
-                Thread.sleep(10000); // One final wait so people can get
-                                     // their barcode
-              } catch (InterruptedException e) {
-              }
-              return;
-            }
-            try {
-              Thread.sleep(1000); // Wait one second and try again
-            } catch (InterruptedException e) {
-              // XXX
-            }
-          }
-        }
-      });
-
 
     // Now that the command line options have been processed, we can create the buildExecutor.
     buildExecutor = new NonQueuingExecutor(commandLineOptions.maxSimultaneousBuilds);
 
     int port = commandLineOptions.port;
-    SelectorThread threadSelector = GrizzlyServerFactory.create("http://localhost:" + port + "/");
+    URI uri = UriBuilder.fromUri("http://localhost/").port(port).build();
+    ResourceConfig config = new ResourceConfig(BuildServer.class);
+    config.register(MultiPartFeature.class);
+    config.register(LoggingFeature.class);
+
+    // Remove comments to show trace when error occurs
+    // config.property(ServerProperties.TRACING, "ALL");
+    // config.property(ServerProperties.TRACING_THRESHOLD, "VERBOSE");
+
+    final HttpServer server = GrizzlyHttpServerFactory.createHttpServer(uri, config, false);
+
+    Runtime.getRuntime().addShutdownHook(new Thread() {
+      @Override
+      public void run() {
+        shuttingTime = System.currentTimeMillis();
+        if (buildExecutor == null) {
+          /* We haven't really started up yet... */
+          return;
+        }
+        while (true) {
+          try {
+            int tasks = buildExecutor.getActiveTaskCount();
+            if (tasks <= 0) {
+              Thread.sleep(10000); // One final wait so people can get their barcode
+              return;
+            }
+            Thread.sleep(1000); // Wait one second and try again
+          } catch (InterruptedException e) {
+          } finally {
+            server.shutdownNow();
+          }
+        }
+      }
+    });
+    server.start();
+
     String hostAddress = InetAddress.getLocalHost().getHostAddress();
     LOG.info("App Inventor Build Server - Version: " + GitBuildId.getVersion());
     LOG.info("App Inventor Build Server - Git Fingerprint: " + GitBuildId.getFingerprint());
@@ -738,23 +961,15 @@ public class BuildServer {
       LOG.info("Maximum simultanous builds = " + commandLineOptions.maxSimultaneousBuilds);
     }
     LOG.info("Visit: http://" + hostAddress + ":" + port +
-      "/buildserver/health for server health");
+             "/buildserver/health for server health");
     LOG.info("Visit: http://" + hostAddress + ":" + port +
-      "/buildserver/vars for server values");
+             "/buildserver/vars for server values");
     LOG.info("Server running");
-  }
 
-  private static class DeleteFileOnCloseFileInputStream extends FileInputStream {
-    private final File file;
-
-    DeleteFileOnCloseFileInputStream(File file) throws IOException {
-      super(file);
-      this.file = file;
-    }
-    @Override
-    public void close() throws IOException {
-      super.close();
-      file.delete();
+    try {
+      Thread.currentThread().join();
+    } catch (InterruptedException ex) {
+      LOG.log(Level.SEVERE, null, ex);
     }
   }
 
